@@ -5,6 +5,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, FloatField, IntegerField
 from wtforms.validators import DataRequired
 import requests
+import urllib.parse
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '8BYkEfBA6O6donzWlSihBXox7C0sKR6b'
@@ -13,6 +14,8 @@ Bootstrap(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///movie_list.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+api_key = "7ebfeb66469554dce1dac6d405fcf7c3"
 
 
 # Model the movie
@@ -30,16 +33,15 @@ class Movie(db.Model):
 # Create the DB
 # db.create_all()
 
-new_movie = Movie(
-    title="Phone Booth",
-    year=2002,
-    description="Publicist Stuart Shepard finds himself trapped in a phone booth, pinned down by an extortionist's sniper rifle. Unable to leave or receive outside help, Stuart's negotiation with the caller leads to a jaw-dropping climax.",
-    rating=7.3,
-    ranking=10,
-    review="My favourite character was the caller.",
-    img_url="https://image.tmdb.org/t/p/w500/tjrX2oWRCM3Tvarz38zlZM7Uc10.jpg"
-)
-
+# new_movie = Movie(
+#     title="Phone Booth",
+#     year=2002,
+#     description="Publicist Stuart Shepard finds himself trapped in a phone booth, pinned down by an extortionist's sniper rifle. Unable to leave or receive outside help, Stuart's negotiation with the caller leads to a jaw-dropping climax.",
+#     rating=7.3,
+#     ranking=10,
+#     review="My favourite character was the caller.",
+#     img_url="https://image.tmdb.org/t/p/w500/tjrX2oWRCM3Tvarz38zlZM7Uc10.jpg"
+# )
 
 # db.session.add(new_movie)
 # db.session.commit()
@@ -52,12 +54,6 @@ class MovieForm(FlaskForm):
 
 class NewMovieForm(FlaskForm):
     title = StringField('Title', validators=[DataRequired()])
-    year = IntegerField('Year', validators=[DataRequired()])
-    description = StringField('Description', validators=[DataRequired()])
-    rating = FloatField('Rating', validators=[DataRequired()])
-    review = StringField('Review', validators=[DataRequired()])
-    ranking = IntegerField('Ranking', validators=[DataRequired()])
-    img_url = StringField('Image URL', validators=[DataRequired()])
     submit = SubmitField('Submit')
 
 
@@ -92,23 +88,39 @@ def delete_movie():
 @app.route("/add", methods=["GET", "POST"])
 def add():
     form = NewMovieForm()
-    # if request.method == "POST":
-
     if form.validate_on_submit():
-        new_movie = Movie(
-            title=request.form["title"],
-            year=request.form["year"],
-            ranking=request.form["ranking"],
-            rating=request.form["rating"],
-            description=request.form["description"],
-            review=request.form["review"],
-            img_url=request.form["img_url"],
-        )
-        db.session.add(new_movie)
-        db.session.commit()
-        return redirect(url_for('home'))
+        search_query = request.form["title"]
+        search_page = "1"
+        search_url = f"https://api.themoviedb.org/3/search/movie?api_key={api_key}&query={urllib.parse.quote(search_query)}&page={search_page}&language=en&include_adult=false"
+        response = requests.get(search_url)
+        movies = []
+        for result in response.json()["results"]:
+            movies.append({'title': result["title"], 'release_date': result["release_date"], 'id': result["id"]})
+        return render_template("select.html", movies=movies)
     return render_template("add.html", form=form)
+
+
+@app.route("/select", methods=["GET"])
+def select():
+    movie_id = request.args.get('movie_id')
+    url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={api_key}"
+    response = requests.get(url)
+
+    print(response.json()["title"], response.json()["poster_path"], response.json()["release_date"][0:4], response.json()["overview"])
+    movie = Movie (
+        title=response.json()["title"],
+        img_url=response.json()["poster_path"],
+        year=int(response.json()["release_date"][0:4]),
+        description=response.json()["overview"],
+        rating=0.0,
+        ranking=0,
+        review=""
+    )
+    db.session.add(movie)
+    db.session.commit()
+    return redirect(url_for("edit_rating", id=movie.id))
 
 
 if __name__ == '__main__':
     app.run(debug=True)
+
